@@ -6,7 +6,7 @@ import requests
 from googletrans import Translator
 
 # 🔑 DeepSeek API Key
-DEEPSEEK_API_KEY = "sk-12ac850b37194f0ca495f958dd230407"
+DEEPSEEK_API_KEY = ""<-- your api -->
 
 # 🎤 Initialize engines
 engine = pyttsx3.init()
