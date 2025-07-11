@@ -31,4 +31,5 @@ Dazzy is a multilingual AI-powered voice assistant built in Python. It can liste
 - `pyttsx3`  
 - `wikipedia`  
 - `requests`  
-- `googletrans`  
+- `googletrans`
+ - `googlesearch`  
