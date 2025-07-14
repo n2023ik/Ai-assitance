@@ -1,6 +1,4 @@
-Here’s an updated and improved `README.md` section for your Dazzy project, reflecting your latest features and a more attractive, clear layout:
 
----
 
 # 🤖 Dazzy – Your Smart Voice Assistant
 
@@ -53,8 +51,6 @@ Dazzy features a beautiful desktop UI, audio visualizer, sound effects, and HTML
 Try saying:  
 - “Open YouTube”  
 - “Search YouTube for Python tutorials”  
-- “Tell me about Alan Turing”  
 
 ---
 
-Let me know if you want a full sample README file or further customization!
