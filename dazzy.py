@@ -24,13 +24,15 @@ from matplotlib.figure import Figure
 
 # 🔐 Configuration
 CONFIG = {
-    "DEEPSEEK_API_KEY": "",  # Add your API key here
+    "DEEPSEEK_API_KEY": "",  # Set to None to use local responses or add a valid key
+    "USER_NAME": "Nikhil Pandey",  # Added personalized user name
     "VOICE_ID": 1,          # 0 for male, 1 for female voice
     "SPEECH_RATE": 170,
     "THEME": "dark",        # 'dark' or 'light'
     "ANIMATIONS": True,
     "SOUND_EFFECTS": True,
-    "VISUALIZER": True
+    "VISUALIZER": True,
+    "USE_LOCAL_RESPONSES": True  # Fallback when API is not available
 }
 
 # 🎵 Initialize sound mixer
@@ -155,6 +157,7 @@ class DazzyAssistant:
         self.command_history = []
         self.current_html_file = None
         self.load_commands()
+        self.user_name = CONFIG["USER_NAME"]
         
     def load_commands(self):
         try:
@@ -162,18 +165,20 @@ class DazzyAssistant:
                 self.custom_commands = json.load(f)
         except:
             self.custom_commands = {
-                "greetings": ["hello", "hi", "hey"],
-                "farewells": ["bye", "goodbye", "exit"],
+                "greetings": ["hello", "hi", "hey", "greetings"],
+                "farewells": ["bye", "goodbye", "exit", "see you"],
                 "actions": {
                     "open youtube": "webbrowser.open('https://www.youtube.com')",
-                    "open google": "webbrowser.open('https://www.google.com')"
+                    "open google": "webbrowser.open('https://www.google.com')",
+                    "open github": "webbrowser.open('https://www.github.com')"
                 }
             }
             
     def ask_dazzy(self, prompt):
-        if not CONFIG["DEEPSEEK_API_KEY"]:
-            return "API key not set. Cannot fetch response."
-
+        # If no API key or using local responses
+        if not CONFIG["DEEPSEEK_API_KEY"] or CONFIG["USE_LOCAL_RESPONSES"]:
+            return self.local_response(prompt)
+            
         url = "https://api.deepseek.com/v1/chat/completions"
         headers = {
             "Authorization": f"Bearer {CONFIG['DEEPSEEK_API_KEY']}",
@@ -182,7 +187,7 @@ class DazzyAssistant:
         data = {
             "model": "deepseek-chat",
             "messages": [
-                {"role": "system", "content": "You are Dazzy, a smart multilingual voice assistant."},
+                {"role": "system", "content": f"You are Dazzy, a smart multilingual voice assistant talking to {self.user_name}."},
                 {"role": "user", "content": prompt}
             ]
         }
@@ -191,8 +196,30 @@ class DazzyAssistant:
             response = requests.post(url, headers=headers, json=data, timeout=10)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
-        except Exception as e:
+        except requests.exceptions.HTTPError as e:
+            if response.status_code == 402:
+                return "I can't process that request right now. Please check your API subscription."
             return f"Sorry, I encountered an error: {str(e)}"
+        except Exception as e:
+            return self.local_response(prompt)
+            
+    def local_response(self, prompt):
+        """Fallback responses when API is not available"""
+        prompt_lower = prompt.lower()
+        
+        if any(q in prompt_lower for q in ["how are you", "how's it going"]):
+            return f"I'm doing great, {self.user_name}! How about you?"
+            
+        elif "weather" in prompt_lower:
+            return "I can't check the weather right now, but you might want to look outside!"
+            
+        elif "your name" in prompt_lower:
+            return "I'm Dazzy, your personal AI assistant!"
+            
+        elif "thank" in prompt_lower:
+            return f"You're welcome, {self.user_name}!"
+            
+        return "I'm not sure how to respond to that. Could you try asking differently?"
             
     def create_html_file(self, topic, html_code):
         try:
@@ -233,11 +260,19 @@ class DazzyAssistant:
         
         # Built-in commands
         if any(greeting in cmd for greeting in self.custom_commands["greetings"]):
-            greetings = ["Hello!", "Hi there!", "Hey! How can I help?"]
+            greetings = [
+                f"Hello {self.user_name}!",
+                f"Hi {self.user_name}! How can I help you today?",
+                f"Hey {self.user_name}! What can I do for you?"
+            ]
             return random.choice(greetings)
             
         elif any(farewell in cmd for farewell in self.custom_commands["farewells"]):
-            farewells = ["Goodbye!", "See you later!", "Have a great day!"]
+            farewells = [
+                f"Goodbye {self.user_name}! Have a great day!",
+                f"See you later {self.user_name}!",
+                f"Bye {self.user_name}! Come back soon!"
+            ]
             return random.choice(farewells)
             
         elif "open youtube" in cmd:
@@ -284,6 +319,9 @@ class DazzyAssistant:
             ]
             return random.choice(jokes)
             
+        elif "clear" in cmd or "reset" in cmd:
+            return "Type 'clear' in the chat to reset the conversation."
+            
         else:
             return self.ask_dazzy(cmd)
 
@@ -297,7 +335,7 @@ class DazzyUI:
         self.play_sound("startup")
         
     def setup_ui(self):
-        self.root.title("✨ Dazzy AI Assistant")
+        self.root.title(f"✨ Dazzy AI Assistant - {CONFIG['USER_NAME']}")
         self.root.geometry("800x700")
         self.root.minsize(600, 600)
         sv_ttk.set_theme(CONFIG["THEME"])
@@ -315,7 +353,7 @@ class DazzyUI:
         
         self.title_label = ttk.Label(
             self.header_frame, 
-            text="Dazzy AI Assistant", 
+            text=f"Dazzy AI Assistant - {CONFIG['USER_NAME']}", 
             font=("Segoe UI", 18, "bold")
         )
         self.title_label.pack(side=tk.LEFT, padx=10)
@@ -374,12 +412,20 @@ class DazzyUI:
         )
         self.voice_btn.pack(side=tk.LEFT)
         
+        # Clear button
+        self.clear_btn = ttk.Button(
+            self.input_frame,
+            text="Clear",
+            command=self.clear_conversation
+        )
+        self.clear_btn.pack(side=tk.LEFT, padx=(5, 0))
+        
         # Animation for listening state
         self.listening = False
         self.animate_logo()
         
         # Initial greeting
-        self.add_message("Dazzy", "Hello! I'm Dazzy, your AI assistant. How can I help you today?")
+        self.add_message("Dazzy", f"Hello {CONFIG['USER_NAME']}! I'm Dazzy, your AI assistant. How can I help you today?")
         
     def animate_logo(self):
         if self.listening:
@@ -401,6 +447,12 @@ class DazzyUI:
         self.conversation.insert(tk.END, f"{sender}: {message}\n\n")
         self.conversation.config(state='disabled')
         self.conversation.see(tk.END)
+        
+    def clear_conversation(self):
+        self.conversation.config(state='normal')
+        self.conversation.delete(1.0, tk.END)
+        self.conversation.config(state='disabled')
+        self.add_message("Dazzy", f"Conversation cleared. How can I help you, {CONFIG['USER_NAME']}?")
         
     def on_send(self, event=None):
         user_text = self.user_input.get().strip()
@@ -455,7 +507,7 @@ def main():
     ui = DazzyUI(root, assistant)
     
     def on_closing():
-        assistant.voice_engine.speak("Goodbye!")
+        assistant.voice_engine.speak(f"Goodbye {CONFIG['USER_NAME']}!")
         root.destroy()
         
     root.protocol("WM_DELETE_WINDOW", on_closing)
