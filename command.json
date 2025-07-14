@@ -1,0 +1,8 @@
+{
+    "greetings": ["hello", "hi", "hey"],
+    "farewells": ["bye", "goodbye", "exit"],
+    "actions": {
+        "open youtube": "webbrowser.open('https://www.youtube.com')",
+        "open google": "webbrowser.open('https://www.google.com')"
+    }
+}
