@@ -1,26 +1,35 @@
-# 🤖 Dazzy - Your Smart Voice Assistant
-
-Dazzy is a multilingual AI-powered voice assistant built in Python. It can listen to your voice, understand your queries, and respond intelligently using natural language — either via Wikipedia, web search, or integrated AI APIs.
+Here’s an updated and improved `README.md` section for your Dazzy project, reflecting your latest features and a more attractive, clear layout:
 
 ---
 
-## 🔥 Features
+# 🤖 Dazzy – Your Smart Voice Assistant
 
-- 🎙️ Voice recognition using `speech_recognition`
-- 🗣️ Text-to-speech via `pyttsx3`
-- 🌐 Wikipedia integration for knowledge retrieval
-- 🔍 Google search automation
-- 📺 YouTube launcher via voice
-- 🧠 AI response generation using DeepSeek API
-- 🌍 Multilingual translation with `googletrans`
-- 📦 Clean modular structure for further expansion
+Dazzy is a modern, multilingual AI-powered voice assistant built with Python.  
+It listens to your voice, understands your queries, and responds intelligently using Wikipedia, Google, YouTube, or integrated AI APIs.  
+Dazzy features a beautiful desktop UI, audio visualizer, sound effects, and HTML code generation!
+
+---
+
+## ✨ Features
+
+- 🎙️ **Voice Recognition** (speech_recognition)
+- 🗣️ **Text-to-Speech** (pyttsx3)
+- 🌐 **Wikipedia Integration** for instant knowledge
+- 🔍 **Google Search** automation
+- 📺 **YouTube Search & Launcher** via voice or text
+- 🧠 **AI Response Generation** (DeepSeek API)
+- 🌍 **Multilingual Translation** (googletrans)
+- 🎨 **Modern Desktop UI** (Tkinter, sv_ttk/ttkbootstrap)
+- 🔊 **Audio Visualizer** and sound effects
+- 💻 **HTML Code Generation** (voice: “create html for ...”)
+- 📦 **Modular, extensible codebase**
 
 ---
 
 ## 🚀 Demo
 
-👉 Watch the full demo on LinkedIn:  
-🔗 [Dazzy AI Voice Assistant – LinkedIn Video Demo](https://www.linkedin.com/posts/nikhil-pandey-45b276276_ai-voiceassistant-pythonproject-activity-7349068557667708930-H_W1?utm_source=share&utm_medium=member_desktop&rcm=ACoAAENQmgcB1ZAU4xufTx3Pcce_BP21LrOzYa8)
+👉 Watch the full demo on LinkedIn: https://www.linkedin.com/posts/nikhil-pandey-45b276276_python-ai-voiceassistant-activity-7350421547100073986-ExlI?utm_source=share&utm_medium=member_desktop&rcm=ACoAAENQmgcB1ZAU4xufTx3Pcce_BP21LrOzYa8
+
 
 ---
 
@@ -31,5 +40,21 @@ Dazzy is a multilingual AI-powered voice assistant built in Python. It can liste
 - `pyttsx3`  
 - `wikipedia`  
 - `requests`  
-- `googletrans`
- - `googlesearch`  
+- `googletrans`  
+- `pygame`  
+- `tkinter`, `sv_ttk` or `ttkbootstrap`  
+- `matplotlib` (for audio visualizer)  
+- `pyaudio`  
+- DeepSeek API
+
+---
+
+**Tip:**  
+Try saying:  
+- “Open YouTube”  
+- “Search YouTube for Python tutorials”  
+- “Tell me about Alan Turing”  
+
+---
+
+Let me know if you want a full sample README file or further customization!
