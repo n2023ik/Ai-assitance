@@ -44,7 +44,7 @@ def load_config():
         sys.exit(1)
 
 CONFIG = load_config()
-DEEPSEEK_API_KEY = os.getenv("sk-12ac850b37194f0ca495f958dd230407")
+DEEPSEEK_API_KEY = os.getenv("")
 
 pygame.mixer.init()
 SOUNDS = {
