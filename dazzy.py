@@ -1,513 +1,471 @@
-import speech_recognition as sr
-import pyttsx3
-import webbrowser
-import wikipedia
-import requests
-from googletrans import Translator
 import os
-import time
-import tkinter as tk
-from tkinter import scrolledtext, messagebox, ttk
-import threading
+import sys
 import json
 import random
-from PIL import Image, ImageTk
-import sv_ttk
-import pygame
+import re
+import threading
+import time
+import webbrowser
 from datetime import datetime
-import math
-import wave
-import pyaudio
+import logging
+
 import numpy as np
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib.figure import Figure
+import pyaudio
+import pygame
+import pyttsx3
+import requests
+import speech_recognition as sr
+import sv_ttk
+import tkinter as tk
+from tkinter import messagebox, scrolledtext, ttk
+import wikipedia
 
-# 🔐 Configuration
-CONFIG = {
-    "DEEPSEEK_API_KEY": "",  # Set to None to use local responses or add a valid key
-    "USER_NAME": "Nikhil Pandey",  # Added personalized user name
-    "VOICE_ID": 1,          # 0 for male, 1 for female voice
-    "SPEECH_RATE": 170,
-    "THEME": "dark",        # 'dark' or 'light'
-    "ANIMATIONS": True,
-    "SOUND_EFFECTS": True,
-    "VISUALIZER": True,
-    "USE_LOCAL_RESPONSES": True  # Fallback when API is not available
-}
+# --------------------------------------------------
+# 📝 Configuration and Setup
+# --------------------------------------------------
 
-# 🎵 Initialize sound mixer
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+def load_config():
+    """Loads configuration from config.json"""
+    try:
+        with open('config.json', 'r') as f:
+            return json.load(f)
+    except FileNotFoundError:
+        default_config = {
+            "USER_NAME": "User", "VOICE_ID": 1, "SPEECH_RATE": 180,
+            "THEME": "dark", "SOUND_EFFECTS": True, "VISUALIZER": True
+        }
+        with open('config.json', 'w') as f:
+            json.dump(default_config, f, indent=4)
+        return default_config
+    except json.JSONDecodeError:
+        logging.error("Error decoding config.json. Please check its format.")
+        sys.exit(1)
+
+CONFIG = load_config()
+DEEPSEEK_API_KEY = os.getenv("")
+
 pygame.mixer.init()
 SOUNDS = {
-    "startup": "sounds/startup.wav",
-    "notification": "sounds/notification.wav",
-    "success": "sounds/success.wav",
-    "error": "sounds/error.wav"
+    "startup": "sounds/startup.wav", "notification": "sounds/notification.wav",
+    "success": "sounds/success.wav", "error": "sounds/error.wav"
 }
 
-# 🎙️ Audio Visualizer
-class AudioVisualizer:
-    def __init__(self, root, width=300, height=100):
-        self.root = root
-        self.width = width
-        self.height = height
-        self.fig = Figure(figsize=(width/100, height/100), dpi=100)
-        self.ax = self.fig.add_subplot(111)
-        self.ax.set_facecolor('#1a1a2e')
-        self.fig.patch.set_facecolor('#1a1a2e')
-        self.line, = self.ax.plot([], [], color='#e94560', linewidth=2)
-        self.ax.set_ylim(-1, 1)
-        self.ax.set_xlim(0, 100)
-        self.ax.axis('off')
-        self.canvas = FigureCanvasTkAgg(self.fig, master=root)
-        self.canvas.get_tk_widget().config(bg='#1a1a2e')
-        self.animation = None
-        self.data = np.zeros(100)
-        
-    def update(self, audio_data):
-        if not CONFIG["VISUALIZER"]:
-            return
-            
-        self.data = np.roll(self.data, -1)
-        self.data[-1] = audio_data
-        self.line.set_data(np.arange(100), self.data)
-        self.canvas.draw()
-        
-    def pack(self, **kwargs):
-        self.canvas.get_tk_widget().pack(**kwargs)
+# --------------------------------------------------
+# 🎤 Audio Visualizer (Lightweight Tkinter version)
+# --------------------------------------------------
+class AudioVisualizer(tk.Canvas):
+    def __init__(self, parent, **kwargs):
+        super().__init__(parent, **kwargs)
+        self.config(bg="#1c1c1c", highlightthickness=0)
+        self.num_bars = 30
+        self.bars = []
+        self.bar_width = (int(self["width"]) - 20) / self.num_bars
+        for i in range(self.num_bars):
+            x0 = i * self.bar_width + 10
+            bar = self.create_rectangle(x0, int(self["height"]), x0 + self.bar_width - 2, int(self["height"]), fill="#00ff99", outline="")
+            self.bars.append(bar)
 
-# 🎤 Voice Engine
+    def update_visualizer(self, rms_volume):
+        if not CONFIG["VISUALIZER"]: return
+        max_height = int(self["height"])
+        for i, bar in enumerate(self.bars):
+            sine_mod = (np.sin(i / 1.5 + time.time() * 10) + 1) / 2
+            bar_height = max(2, rms_volume * max_height * sine_mod * 15)
+            y0 = max_height - bar_height
+            self.coords(bar, self.coords(bar)[0], y0, self.coords(bar)[2], max_height)
+            color_intensity = int(min(255, bar_height / max_height * 255 * 1.5))
+            color = f'#{color_intensity:02x}{255-color_intensity:02x}99'
+            self.itemconfig(bar, fill=color)
+
+# --------------------------------------------------
+# 🗣️ Voice Engine
+# --------------------------------------------------
 class VoiceEngine:
-    def __init__(self):
+    def __init__(self, visualizer):
         self.engine = pyttsx3.init()
         self.recognizer = sr.Recognizer()
-        self.translator = Translator()
-        self.voices = self.engine.getProperty('voices')
-        self.set_voice(CONFIG["VOICE_ID"])
-        self.engine.setProperty('rate', CONFIG["SPEECH_RATE"])
+        self.audio_visualizer = visualizer
         self.is_listening = False
-        self.audio_visualizer = None
-        self.audio_stream = None
-        
-    def set_voice(self, voice_id):
-        if 0 <= voice_id < len(self.voices):
-            self.engine.setProperty('voice', self.voices[voice_id].id)
-            
+        voices = self.engine.getProperty('voices')
+        if 0 <= CONFIG["VOICE_ID"] < len(voices):
+            self.engine.setProperty('voice', voices[CONFIG["VOICE_ID"]].id)
+        self.engine.setProperty('rate', CONFIG["SPEECH_RATE"])
+    
     def speak(self, text):
-        print(f"\n🎙️ Dazzy says: {text}")
-        self.engine.say(text)
-        self.engine.runAndWait()
-        
+        logging.info(f"Dazzy says: {text}")
+        try:
+            self.engine.say(text)
+            self.engine.runAndWait()
+        except RuntimeError as e:
+            logging.error(f"Speech engine error: {e}. This can happen during shutdown.")
+
+    def _audio_callback(self, in_data, frame_count, time_info, status):
+        try:
+            audio_data = np.frombuffer(in_data, dtype=np.int16)
+            rms = np.sqrt(np.mean(audio_data.astype(np.float64)**2))
+            if self.audio_visualizer:
+                self.audio_visualizer.after(0, self.audio_visualizer.update_visualizer, rms / 1000)
+        except Exception as e:
+            logging.warning(f"Audio callback error: {e}")
+        return (in_data, pyaudio.paContinue)
+
     def listen(self):
+        p = pyaudio.PyAudio()
+        stream = None
         with sr.Microphone() as source:
             self.is_listening = True
-            print("\n🎤 Listening for your command...")
-            self.recognizer.adjust_for_ambient_noise(source, duration=1)
-            
-            # Start audio stream for visualization
-            if CONFIG["VISUALIZER"]:
-                self.start_audio_stream()
-                
+            logging.info("Listening for your command...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
+
+            if CONFIG["VISUALIZER"] and self.audio_visualizer:
+                stream = p.open(format=pyaudio.paInt16, channels=1, rate=44100,
+                                input=True, frames_per_buffer=1024,
+                                stream_callback=self._audio_callback)
+                stream.start_stream()
             try:
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=8)
-                
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=10)
                 if CONFIG["SOUND_EFFECTS"]:
-                    pygame.mixer.Sound(SOUNDS["notification"]).play()
-                    
-                try:
-                    text = self.recognizer.recognize_google(audio)
-                    print(f"👂 You said: {text}")
-                    return text.lower()
-                except sr.UnknownValueError:
-                    print("❌ Could not understand audio")
-                    return ""
-                except sr.RequestError as e:
-                    print(f"❌ Could not request results; {e}")
-                    return ""
+                    self.play_sound_local("notification")
+                text = self.recognizer.recognize_google(audio)
+                logging.info(f"You said: {text}")
+                return text.lower()
+            except sr.UnknownValueError:
+                logging.warning("Could not understand audio.")
+                return ""
+            except sr.RequestError as e:
+                logging.error(f"Could not request results from Google; {e}")
+                return ""
             except Exception as e:
-                print(f"❌ Error: {e}")
+                logging.error(f"An error occurred during listening: {e}")
                 return ""
             finally:
                 self.is_listening = False
-                if CONFIG["VISUALIZER"] and self.audio_stream:
-                    self.audio_stream.stop_stream()
-                    self.audio_stream.close()
-                    
-    def start_audio_stream(self):
-        p = pyaudio.PyAudio()
-        self.audio_stream = p.open(format=pyaudio.paInt16,
-                                 channels=1,
-                                 rate=44100,
-                                 input=True,
-                                 frames_per_buffer=1024,
-                                 stream_callback=self.audio_callback)
-        self.audio_stream.start_stream()
-        
-    def audio_callback(self, in_data, frame_count, time_info, status):
-        if self.audio_visualizer and self.is_listening:
-            audio_data = np.frombuffer(in_data, dtype=np.int16)
-            if len(audio_data) > 0:
-                normalized = audio_data / 32768.0
-                self.audio_visualizer.update(normalized[0])
-        return (in_data, pyaudio.paContinue)
+                if stream and stream.is_active():
+                    stream.stop_stream()
+                    stream.close()
+                p.terminate()
 
-# 🤖 AI Assistant Core
+    def play_sound_local(self, sound_type):
+        try:
+            sound_path = SOUNDS.get(sound_type)
+            if sound_path and os.path.exists(sound_path):
+                pygame.mixer.Sound(sound_path).play()
+            else:
+                logging.warning(f"Sound file not found: {sound_path}")
+        except Exception as e:
+            logging.error(f"Error playing sound: {e}")
+
+# --------------------------------------------------
+# 🤖 AI Assistant Core Logic
+# --------------------------------------------------
 class DazzyAssistant:
-    def __init__(self):
-        self.voice_engine = VoiceEngine()
-        self.command_history = []
-        self.current_html_file = None
-        self.load_commands()
+    def __init__(self, voice_engine):
+        self.voice_engine = voice_engine
         self.user_name = CONFIG["USER_NAME"]
         
-    def load_commands(self):
+        self.command_map = {
+            "hello": self.greet, "hi": self.greet, "hey": self.greet,
+            "goodbye": self.farewell, "bye": self.farewell, "exit": self.farewell,
+            "open youtube": self.open_youtube, "open google": self.open_google,
+            "open github": self.open_github, # This command now has a corresponding method
+            "search youtube for": self.search_youtube,
+            "search google for": self.search_google, "search for": self.search_google,
+            "who is": self.get_wikipedia_summary, "tell me about": self.get_wikipedia_summary,
+            "the time": self.get_time, "the date": self.get_date,
+            "tell me a joke": self.tell_joke,
+            "calculate": self.calculate, "compute": self.calculate,
+        }
+        self.load_custom_commands()
+
+    def load_custom_commands(self):
         try:
             with open('commands.json', 'r') as f:
-                self.custom_commands = json.load(f)
-        except:
-            self.custom_commands = {
-                "greetings": ["hello", "hi", "hey", "greetings"],
-                "farewells": ["bye", "goodbye", "exit", "see you"],
-                "actions": {
-                    "open youtube": "webbrowser.open('https://www.youtube.com')",
-                    "open google": "webbrowser.open('https://www.google.com')",
-                    "open github": "webbrowser.open('https://www.github.com')"
-                }
-            }
-            
-    def ask_dazzy(self, prompt):
-        # If no API key or using local responses
-        if not CONFIG["DEEPSEEK_API_KEY"] or CONFIG["USE_LOCAL_RESPONSES"]:
-            return self.local_response(prompt)
-            
-        url = "https://api.deepseek.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {CONFIG['DEEPSEEK_API_KEY']}",
-            "Content-Type": "application/json"
-        }
-        data = {
-            "model": "deepseek-chat",
-            "messages": [
-                {"role": "system", "content": f"You are Dazzy, a smart multilingual voice assistant talking to {self.user_name}."},
-                {"role": "user", "content": prompt}
-            ]
-        }
+                custom_commands = json.load(f)
+                for command, url in custom_commands.get("websites", {}).items():
+                    self.command_map[f"open {command}"] = lambda u=url: self.open_website(u)
+        except FileNotFoundError:
+            logging.warning("commands.json not found. Skipping custom commands.")
+        except Exception as e:
+            logging.error(f"Error loading commands.json: {e}")
 
+    # --- Command Functions ---
+    def open_website(self, url):
+        webbrowser.open(url)
+        return f"Opening {url}."
+
+    def greet(self, _=""):
+        return "Hello Nikhil Pandey"
+
+    def farewell(self, _=""):
+        return f"Goodbye, {self.user_name}! Have a great day."
+        
+    def open_youtube(self, _=""):
+        webbrowser.open("https://www.youtube.com")
+        return "Opening YouTube."
+
+    def open_google(self, _=""):
+        webbrowser.open("https://www.google.com")
+        return "Opening Google."
+
+    # FIXED: Added the missing open_github method
+    def open_github(self, _=""):
+        webbrowser.open("https://www.github.com")
+        return "Opening GitHub."
+
+    def search_youtube(self, query):
+        url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
+        webbrowser.open(url)
+        return f"Searching YouTube for {query}."
+
+    def search_google(self, query):
+        url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
+        webbrowser.open(url)
+        return f"Searching Google for {query}."
+
+    def get_wikipedia_summary(self, query):
         try:
-            response = requests.post(url, headers=headers, json=data, timeout=10)
+            # Try to get the exact page first
+            page = wikipedia.page(query, auto_suggest=False)
+            # If the returned page title is not the same as the query, ask for clarification
+            if page.title.lower() != query.strip().lower():
+                return f"I found '{page.title}' instead of '{query}'. Did you mean '{page.title}'? Please clarify."
+            summary = page.summary.split('\n')[0]
+            if "may refer to:" in summary.lower():
+                return f"'{query}' may refer to multiple things. Can you be more specific?"
+            return summary
+        except wikipedia.exceptions.DisambiguationError as e:
+            return f"'{query}' is ambiguous. Did you mean: {', '.join(e.options[:3])}?"
+        except wikipedia.exceptions.PageError:
+            return f"Sorry, I couldn't find any information on Wikipedia for '{query}'."
+        except Exception as e:
+            logging.error(f"Wikipedia error: {e}")
+            return "Sorry, I'm having trouble connecting to Wikipedia right now."
+
+    def get_time(self, _=""):
+        return f"The current time is {datetime.now().strftime('%I:%M %p')}."
+
+    def get_date(self, _=""):
+        return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
+
+    def tell_joke(self, _=""):
+        return random.choice([
+            "Why don't scientists trust atoms? Because they make up everything!",
+            "I told my wife she should embrace her mistakes. She gave me a hug.",
+            "Why did the scarecrow win an award? Because he was outstanding in his field!"
+        ])
+    
+    def calculate(self, query):
+        try:
+            query = query.lower().replace('x', '*').replace('times', '*').replace('divided by', '/').replace('plus', '+').replace('minus', '-')
+            match = re.search(r'(\d+\.?\d*)\s*([+\-*/])\s*(\d+\.?\d*)', query)
+            if not match:
+                return "I couldn't understand the calculation. Please state it clearly, like '5 times 3'."
+            num1, op, num2 = float(match.group(1)), match.group(2), float(match.group(3))
+            
+            if op == '+': result = num1 + num2
+            elif op == '-': result = num1 - num2
+            elif op == '*': result = num1 * num2
+            elif op == '/':
+                if num2 == 0: return "I can't divide by zero."
+                result = num1 / num2
+            else: return "Unknown operator."
+            return f"The answer is {int(result) if result.is_integer() else round(result, 4)}."
+        except Exception as e:
+            logging.error(f"Calculation error: {e}")
+            return "Sorry, I had trouble with that calculation."
+
+    def ask_deepseek(self, prompt):
+        if not DEEPSEEK_API_KEY: return "API key not configured. I can only handle built-in commands."
+        url, headers = "https://api.deepseek.com/v1/chat/completions", {"Authorization": f"Bearer {DEEPSEEK_API_KEY}", "Content-Type": "application/json"}
+        data = {"model": "deepseek-chat", "messages": [{"role": "system", "content": f"You are Dazzy, a friendly AI assistant."}, {"role": "user", "content": prompt}]}
+        try:
+            response = requests.post(url, headers=headers, json=data, timeout=15)
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"].strip()
         except requests.exceptions.HTTPError as e:
-            if response.status_code == 402:
-                return "I can't process that request right now. Please check your API subscription."
-            return f"Sorry, I encountered an error: {str(e)}"
+            return f"An HTTP error occurred: {e}"
         except Exception as e:
-            return self.local_response(prompt)
-            
-    def local_response(self, prompt):
-        """Fallback responses when API is not available"""
-        prompt_lower = prompt.lower()
-        
-        if any(q in prompt_lower for q in ["how are you", "how's it going"]):
-            return f"I'm doing great, {self.user_name}! How about you?"
-            
-        elif "weather" in prompt_lower:
-            return "I can't check the weather right now, but you might want to look outside!"
-            
-        elif "your name" in prompt_lower:
-            return "I'm Dazzy, your personal AI assistant!"
-            
-        elif "thank" in prompt_lower:
-            return f"You're welcome, {self.user_name}!"
-            
-        return "I'm not sure how to respond to that. Could you try asking differently?"
-            
-    def create_html_file(self, topic, html_code):
-        try:
-            if not os.path.exists("html_output"):
-                os.makedirs("html_output")
-                
-            filename = f"html_output/{topic.replace(' ', '_')}_{int(time.time())}.html"
-            with open(filename, "w", encoding="utf-8") as file:
-                file.write(html_code)
-            self.current_html_file = filename
-            webbrowser.open('file://' + os.path.realpath(filename))
-            return f"Created HTML page for {topic}."
-        except Exception as e:
-            return f"Error creating HTML file: {e}"
-            
-    def get_wikipedia_summary(self, query):
-        try:
-            return wikipedia.summary(query, sentences=3, auto_suggest=True)
-        except wikipedia.DisambiguationError as e:
-            return f"Multiple options found. Please be more specific."
-        except wikipedia.PageError:
-            return f"I couldn't find information about {query}."
-        except Exception:
-            return "Wikipedia is unavailable right now."
-            
-    def handle_command(self, command):
-        cmd = command.lower().strip()
-        self.command_history.append(cmd)
-        
-        # Check custom commands first
-        for action, script in self.custom_commands["actions"].items():
-            if action in cmd:
-                try:
-                    exec(script)
-                    return f"Executed: {action}"
-                except Exception as e:
-                    return f"Error executing command: {e}"
-        
-        # Built-in commands
-        if any(greeting in cmd for greeting in self.custom_commands["greetings"]):
-            greetings = [
-                f"Hello {self.user_name}!",
-                f"Hi {self.user_name}! How can I help you today?",
-                f"Hey {self.user_name}! What can I do for you?"
-            ]
-            return random.choice(greetings)
-            
-        elif any(farewell in cmd for farewell in self.custom_commands["farewells"]):
-            farewells = [
-                f"Goodbye {self.user_name}! Have a great day!",
-                f"See you later {self.user_name}!",
-                f"Bye {self.user_name}! Come back soon!"
-            ]
-            return random.choice(farewells)
-            
-        elif "open youtube" in cmd:
-            webbrowser.open("https://www.youtube.com")
-            return "Opening YouTube."
-            
-        elif "search youtube for" in cmd:
-            query = cmd.split("search youtube for", 1)[1].strip()
-            url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
-            webbrowser.open(url)
-            return f"Searching YouTube for {query}."
-            
-        elif "search" in cmd or "google" in cmd:
-            query = cmd.split("search", 1)[1] if "search" in cmd else cmd.split("google", 1)[1]
-            query = query.strip()
-            url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
-            webbrowser.open(url)
-            return f"Searching Google for {query}."
-            
-        elif any(prefix in cmd for prefix in ["who is", "what is", "tell me about"]):
-            topic = cmd.split(" ", 2)[2] if " " in cmd else cmd
-            return self.get_wikipedia_summary(topic)
-            
-        elif "create html" in cmd:
-            topic = cmd.replace("create html", "").strip()
-            if not topic:
-                return "Please specify what HTML page to create."
-            response = self.ask_dazzy(f"Generate HTML for {topic}")
-            if "<html" in response.lower():
-                return self.create_html_file(topic, response)
-            return "Failed to generate HTML."
-            
-        elif "time" in cmd:
-            return f"It's {datetime.now().strftime('%I:%M %p')}."
-            
-        elif "date" in cmd:
-            return f"Today is {datetime.now().strftime('%A, %B %d, %Y')}."
-            
-        elif "joke" in cmd:
-            jokes = [
-                "Why don't scientists trust atoms? Because they make up everything!",
-                "Did you hear about the mathematician who's afraid of negative numbers? He'll stop at nothing to avoid them!",
-                "Why don't skeletons fight each other? They don't have the guts!"
-            ]
-            return random.choice(jokes)
-            
-        elif "clear" in cmd or "reset" in cmd:
-            return "Type 'clear' in the chat to reset the conversation."
-            
-        else:
-            return self.ask_dazzy(cmd)
+            logging.error(f"API request failed: {e}")
+            return "I'm having trouble connecting to my brain right now."
 
-# 🖥️ Modern UI
+    def handle_command(self, command):
+        cmd_lower = command.lower().strip()
+        # --- NEW: Handle plain math expressions like "3+4" or "12 / 6" ---
+        if re.fullmatch(r'\s*-?\d+(\.\d+)?\s*[\+\-\*/]\s*-?\d+(\.\d+)?\s*', cmd_lower):
+            try:
+                result = eval(cmd_lower)
+                return f"The answer is {int(result) if isinstance(result, float) and result.is_integer() else round(result, 4)}."
+            except Exception:
+                return "Sorry, I couldn't calculate that expression."
+        # --- rest of your code ---
+        # Math intent detection
+        if cmd_lower.startswith("add "):
+            nums = re.findall(r'-?\d+\.?\d*', cmd_lower)
+            if len(nums) >= 2:
+                result = sum(float(n) for n in nums)
+                return f"The answer is {int(result) if result.is_integer() else round(result, 4)}."
+            else:
+                return "Please provide at least two numbers to add."
+        if cmd_lower.startswith("subtract "):
+            nums = re.findall(r'-?\d+\.?\d*', cmd_lower)
+            if len(nums) >= 2:
+                result = float(nums[0])
+                for n in nums[1:]:
+                    result -= float(n)
+                return f"The answer is {int(result) if result.is_integer() else round(result, 4)}."
+            else:
+                return "Please provide at least two numbers to subtract."
+        if cmd_lower.startswith("multiply "):
+            nums = re.findall(r'-?\d+\.?\d*', cmd_lower)
+            if len(nums) >= 2:
+                result = float(nums[0])
+                for n in nums[1:]:
+                    result *= float(n)
+                return f"The answer is {int(result) if result.is_integer() else round(result, 4)}."
+            else:
+                return "Please provide at least two numbers to multiply."
+        if cmd_lower.startswith("divide "):
+            nums = re.findall(r'-?\d+\.?\d*', cmd_lower)
+            if len(nums) >= 2:
+                result = float(nums[0])
+                try:
+                    for n in nums[1:]:
+                        if float(n) == 0:
+                            return "I can't divide by zero."
+                        result /= float(n)
+                except Exception:
+                    return "There was an error dividing the numbers."
+                return f"The answer is {int(result) if result.is_integer() else round(result, 4)}."
+            else:
+                return "Please provide at least two numbers to divide."
+        # Existing logic
+        if cmd_lower.startswith("what is"):
+            if re.search(r'\d', cmd_lower): return self.calculate(cmd_lower)
+            else: return self.get_wikipedia_summary(cmd_lower.replace("what is", "").strip())
+        for key, func in self.command_map.items():
+            if cmd_lower.startswith(key):
+                return func(cmd_lower[len(key):].strip())
+        return self.ask_deepseek(command)
+
+# --------------------------------------------------
+# 🖥️ Graphical User Interface (GUI)
+# --------------------------------------------------
 class DazzyUI:
     def __init__(self, root, assistant):
-        self.root = root
-        self.assistant = assistant
-        self.assistant.voice_engine.audio_visualizer = AudioVisualizer(root)
+        self.root, self.assistant = root, assistant
         self.setup_ui()
         self.play_sound("startup")
-        
+
     def setup_ui(self):
-        self.root.title(f"✨ Dazzy AI Assistant - {CONFIG['USER_NAME']}")
-        self.root.geometry("800x700")
-        self.root.minsize(600, 600)
+        self.root.title(f"Dazzy AI Assistant - {CONFIG['USER_NAME']}")
+        self.root.geometry("800x700"), self.root.minsize(600, 500)
         sv_ttk.set_theme(CONFIG["THEME"])
         
-        # Main container
-        self.main_frame = ttk.Frame(self.root)
-        self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        
-        # Header with animated icon
-        self.header_frame = ttk.Frame(self.main_frame)
-        self.header_frame.pack(fill=tk.X, pady=(0, 10))
-        
-        self.logo_label = ttk.Label(self.header_frame, text="✨", font=("Segoe UI", 24))
-        self.logo_label.pack(side=tk.LEFT)
-        
-        self.title_label = ttk.Label(
-            self.header_frame, 
-            text=f"Dazzy AI Assistant - {CONFIG['USER_NAME']}", 
-            font=("Segoe UI", 18, "bold")
-        )
-        self.title_label.pack(side=tk.LEFT, padx=10)
-        
-        # Status bar
-        self.status_var = tk.StringVar()
-        self.status_var.set("Ready")
-        self.status_bar = ttk.Label(
-            self.main_frame, 
-            textvariable=self.status_var,
-            relief=tk.SUNKEN,
-            anchor=tk.W
-        )
-        self.status_bar.pack(fill=tk.X, pady=(10, 0))
-        
-        # Conversation area
-        self.conversation_frame = ttk.Frame(self.main_frame)
-        self.conversation_frame.pack(fill=tk.BOTH, expand=True)
-        
-        self.conversation = scrolledtext.ScrolledText(
-            self.conversation_frame,
-            wrap=tk.WORD,
-            font=("Segoe UI", 12),
-            state='disabled',
-            padx=10,
-            pady=10
-        )
+        main_frame = ttk.Frame(self.root, padding=10)
+        main_frame.pack(fill=tk.BOTH, expand=True)
+
+        header_frame = ttk.Frame(main_frame)
+        header_frame.pack(fill=tk.X, pady=(0, 10))
+        self.logo_label = ttk.Label(header_frame, text="✨", font=("Segoe UI", 24))
+        self.logo_label.pack(side=tk.LEFT, padx=(0, 10))
+        ttk.Label(header_frame, text="Dazzy AI", font=("Segoe UI", 18, "bold")).pack(side=tk.LEFT)
+
+        self.conversation = scrolledtext.ScrolledText(main_frame, wrap=tk.WORD, font=("Segoe UI", 12), state='disabled', padx=10, pady=10)
         self.conversation.pack(fill=tk.BOTH, expand=True)
-        
-        # Audio visualizer
+
         if CONFIG["VISUALIZER"]:
-            self.assistant.voice_engine.audio_visualizer.pack(fill=tk.X, pady=5)
-        
-        # Input area
-        self.input_frame = ttk.Frame(self.main_frame)
-        self.input_frame.pack(fill=tk.X, pady=(10, 0))
-        
-        self.user_input = ttk.Entry(
-            self.input_frame,
-            font=("Segoe UI", 12)
-        )
-        self.user_input.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 5))
+            self.visualizer = AudioVisualizer(main_frame, width=800, height=80)
+            self.visualizer.pack(fill=tk.X, pady=5)
+            self.assistant.voice_engine.audio_visualizer = self.visualizer
+
+        input_frame = ttk.Frame(main_frame)
+        input_frame.pack(fill=tk.X, pady=(10, 0))
+        input_frame.columnconfigure(0, weight=1)
+
+        self.user_input = ttk.Entry(input_frame, font=("Segoe UI", 12))
+        self.user_input.grid(row=0, column=0, sticky="ew", padx=(0, 5))
         self.user_input.bind("<Return>", self.on_send)
-        
-        self.send_btn = ttk.Button(
-            self.input_frame,
-            text="Send",
-            command=self.on_send
-        )
-        self.send_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        self.voice_btn = ttk.Button(
-            self.input_frame,
-            text="🎤",
-            command=self.on_voice
-        )
-        self.voice_btn.pack(side=tk.LEFT)
-        
-        # Clear button
-        self.clear_btn = ttk.Button(
-            self.input_frame,
-            text="Clear",
-            command=self.clear_conversation
-        )
-        self.clear_btn.pack(side=tk.LEFT, padx=(5, 0))
-        
-        # Animation for listening state
-        self.listening = False
-        self.animate_logo()
-        
-        # Initial greeting
-        self.add_message("Dazzy", f"Hello {CONFIG['USER_NAME']}! I'm Dazzy, your AI assistant. How can I help you today?")
-        
-    def animate_logo(self):
-        if self.listening:
-            angle = math.sin(time.time() * 5) * 15
-            self.logo_label.config(text=f"🎙️")
-        else:
-            self.logo_label.config(text="✨")
-        self.root.after(100, self.animate_logo)
+        self.voice_btn = ttk.Button(input_frame, text="🎤", command=self.on_voice)
+        self.voice_btn.grid(row=0, column=2)
+
+        self.status_var = tk.StringVar(value="Ready")
+        ttk.Label(self.root, textvariable=self.status_var, relief=tk.SUNKEN, anchor=tk.W, padding=2).pack(side=tk.BOTTOM, fill=tk.X)
+        self.add_message("Dazzy", self.assistant.greet())
         
     def play_sound(self, sound_type):
-        if CONFIG["SOUND_EFFECTS"] and sound_type in SOUNDS:
-            try:
-                pygame.mixer.Sound(SOUNDS[sound_type]).play()
-            except:
-                pass
-                
+        if CONFIG["SOUND_EFFECTS"]:
+            self.assistant.voice_engine.play_sound_local(sound_type)
+
     def add_message(self, sender, message):
         self.conversation.config(state='normal')
-        self.conversation.insert(tk.END, f"{sender}: {message}\n\n")
+        self.conversation.insert(tk.END, f"{sender}:\n", ("sender",))
+        self.conversation.insert(tk.END, f"{message}\n\n")
         self.conversation.config(state='disabled')
         self.conversation.see(tk.END)
-        
-    def clear_conversation(self):
-        self.conversation.config(state='normal')
-        self.conversation.delete(1.0, tk.END)
-        self.conversation.config(state='disabled')
-        self.add_message("Dazzy", f"Conversation cleared. How can I help you, {CONFIG['USER_NAME']}?")
-        
+        self.conversation.tag_config("sender", font=("Segoe UI", 12, "bold"))
+
     def on_send(self, event=None):
         user_text = self.user_input.get().strip()
         if user_text:
-            self.add_message("You", user_text)
+            self.add_message(self.assistant.user_name, user_text)
             self.user_input.delete(0, tk.END)
-            self.process_command(user_text)
-            
-    def on_voice(self):
-        self.listening = True
-        self.status_var.set("Listening...")
-        self.play_sound("notification")
-        
-        def listen_thread():
-            command = self.assistant.voice_engine.listen()
-            self.listening = False
-            self.status_var.set("Ready")
-            
-            if command:
-                self.root.after(0, lambda: self.user_input.insert(0, command))
-                self.root.after(0, self.on_send)
-                
-        threading.Thread(target=listen_thread, daemon=True).start()
-        
-    def process_command(self, command):
-        def process():
-            try:
-                response = self.assistant.handle_command(command)
-                self.root.after(0, lambda: self.add_message("Dazzy", response))
-                self.root.after(0, lambda: self.assistant.voice_engine.speak(response))
-                
-                if any(farewell in command.lower() for farewell in self.assistant.custom_commands["farewells"]):
-                    self.root.after(1000, self.root.destroy)
-            except Exception as e:
-                error_msg = f"Error: {str(e)}"
-                self.root.after(0, lambda: self.add_message("Dazzy", error_msg))
-                self.play_sound("error")
-                
-        threading.Thread(target=process, daemon=True).start()
+            threading.Thread(target=self.process_command, args=(user_text,), daemon=True).start()
 
-# 🚀 Main Application
+    def on_voice(self):
+        self.voice_btn.config(state="disabled")
+        self.status_var.set("Listening..."), self.logo_label.config(text="🎙️")
+        self.play_sound("notification")
+        threading.Thread(target=self.listen_thread, daemon=True).start()
+
+    def listen_thread(self):
+        command = self.assistant.voice_engine.listen()
+        def update_ui():
+            self.voice_btn.config(state="normal")
+            self.status_var.set("Ready"), self.logo_label.config(text="✨")
+            if command:
+                self.add_message(self.assistant.user_name, command)
+                self.process_command(command)
+        self.root.after(0, update_ui)
+    
+    def process_command(self, command):
+        self.status_var.set("Thinking...")
+        try:
+            response = self.assistant.handle_command(command)
+            self.play_sound("success")
+        except Exception as e:
+            response, _ = f"An unexpected error occurred: {e}", self.play_sound("error")
+            logging.error(f"Error handling command '{command}': {e}")
+        def update_and_speak():
+            self.add_message("Dazzy", response)
+            self.status_var.set("Ready")
+            threading.Thread(target=self.assistant.voice_engine.speak, args=(response,), daemon=True).start()
+            if any(farewell in command.lower() for farewell in ["bye", "goodbye", "exit"]):
+                self.root.after(2000, self.root.destroy)
+        self.root.after(0, update_and_speak)
+
+# --------------------------------------------------
+# 🚀 Main Application Execution
+# --------------------------------------------------
 def main():
+    if not DEEPSEEK_API_KEY:
+        logging.warning("DEEPSEEK_API_KEY environment variable not set. API features will be disabled.")
+    
     root = tk.Tk()
-    
-    # Set window icon
     try:
-        root.iconbitmap("icon.ico")
-    except:
-        pass
-        
-    assistant = DazzyAssistant()
-    ui = DazzyUI(root, assistant)
+        if sys.platform.startswith('win'): root.iconbitmap("icon.ico")
+    except tk.TclError:
+        logging.warning("icon.ico not found. Skipping icon setting.")
     
+    voice_engine = VoiceEngine(None) # Visualizer is set later
+    assistant = DazzyAssistant(voice_engine)
+    DazzyUI(root, assistant)
+    
+    # FIXED: Simplified on_closing to prevent RuntimeError
     def on_closing():
-        assistant.voice_engine.speak(f"Goodbye {CONFIG['USER_NAME']}!")
+        """Handles the window closing event."""
+        logging.info("Application closing.")
         root.destroy()
         
     root.protocol("WM_DELETE_WINDOW", on_closing)
