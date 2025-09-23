@@ -169,6 +169,7 @@ class DazzyAssistant:
             "hello": self.greet, "hi": self.greet, "hey": self.greet,
             "goodbye": self.farewell, "bye": self.farewell, "exit": self.farewell,
             "open youtube": self.open_youtube, "open google": self.open_google,
+            "open ChatGPT": self.open_ChatGPT, "open google": self.open_ChatGPT,
             "open github": self.open_github, # This command now has a corresponding method
             "search youtube for": self.search_youtube,
             "search google for": self.search_google, "search for": self.search_google,
@@ -204,15 +205,55 @@ class DazzyAssistant:
     def open_youtube(self, _=""):
         webbrowser.open("https://www.youtube.com")
         return "Opening YouTube."
-
+        
+def open_youtube(self, _=""):
+        webbrowser.open("https://www.youtube.com")
+        return "Opening YouTube."
+    
     def open_google(self, _=""):
         webbrowser.open("https://www.google.com")
         return "Opening Google."
+
+    def open_instagram(self, _=""):
+        webbrowser.open("https://www.instagram.com")
+        return "Opening instagram."
+
+    def open_car(self, _=""):
+        webbrowser.open("https://www.car.com")
+        return "Opening car."
+        
+    def open_ChatGPT(self, _=""):
+        webbrowser.open("https://chatgpt.com/")
+        return "Opening ChatGPT."
+
+    def open_Word(self, _=""):
+        webbrowser.open("https://word.com/")
+        return "Opening Word."
+
+    def open_Canva(self, _=""):
+        webbrowser.open("https://www.canva.com/features/cutout-image/")
+        return "Opening Canva."
+
+    def open_gamma ai(self, _=""):
+        webbrowser.open("https://gamma.app/")
+        return "Opening gamma ai."
+
+    def open_Gemini(self, _=""):
+        webbrowser.open("https://gemini.google.com/")
+        return "Opening Gemini."
+
+ def open_Googlemeet(self, _=""):
+        webbrowser.open("https://meet.google.com/")
+        return "Opening Google meet."
 
     # FIXED: Added the missing open_github method
     def open_github(self, _=""):
         webbrowser.open("https://www.github.com")
         return "Opening GitHub."
+        
+        def open_Spotify(self, _=""):
+        webbrowser.open("https://open.spotify.com/")
+        return "Opening Spotify."
 
     def search_youtube(self, query):
         url = f"https://www.youtube.com/results?search_query={query.replace(' ', '+')}"
