@@ -226,6 +226,10 @@ def open_youtube(self, _=""):
         webbrowser.open("https://chatgpt.com/")
         return "Opening ChatGPT."
 
+def open_Gla(self, _=""):
+        webbrowser.open("https://glauniversity.in:8085/#")
+        return "Opening Gla."
+
     def open_Word(self, _=""):
         webbrowser.open("https://word.com/")
         return "Opening Word."
