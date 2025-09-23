@@ -250,7 +250,6 @@ def open_Gla(self, _=""):
         webbrowser.open("https://meet.google.com/")
         return "Opening Google meet."
 
-    # FIXED: Added the missing open_github method
     def open_github(self, _=""):
         webbrowser.open("https://www.github.com")
         return "Opening GitHub."
