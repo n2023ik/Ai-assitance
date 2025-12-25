@@ -1,3 +1,5 @@
+flask==3.0.0
 requests
 wikipedia
 python-dotenv
+beautifulsoup4
