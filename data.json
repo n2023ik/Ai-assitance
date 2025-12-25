@@ -6,4 +6,9 @@
   "who is einstein": "Albert Einstein was a theoretical physicist.",
   "time": "TIME_COMMAND",
   "date": "DATE_COMMAND"
+  "calculate": "CALC_COMMAND",
+  "math": "CALC_COMMAND",
+
+  "who is": "WIKI_COMMAND",
+  "what is": "WIKI_COMMAND"
 }
