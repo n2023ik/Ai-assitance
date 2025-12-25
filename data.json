@@ -1,9 +1,15 @@
 {
-  "hello": "Hello! Dazzy online.",
-  "hi": "Hi! Dazzy online.",
-  "hey": "Hey! Ready when you are.",
-  "what is python": "Python is a high-level programming language.",
-  "who is einstein": "Albert Einstein was a theoretical physicist.",
+  "hello": "Hello!",
+  "hi": "Hi!",
+  "hey": "Hey!",
+
+  "time": "TIME_COMMAND",
+  "date": "DATE_COMMAND",
+
+  "open youtube": "OPEN_YOUTUBE",
+  "open google": "OPEN_GOOGLE",
+  "open gmail": "OPEN_GMAIL"
+
   "time": "TIME_COMMAND",
   "date": "DATE_COMMAND"
   "calculate": "CALC_COMMAND",
