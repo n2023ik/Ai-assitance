@@ -1,17 +1,16 @@
 import os
+import json
 from datetime import datetime
-
-import requests
-import wikipedia
 from flask import Flask, render_template_string, request, jsonify
 
 # --------------------------------------------------
-# 🌱 Environment
+# 📚 Load Dataset
 # --------------------------------------------------
-DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY")
+with open("data.json", "r", encoding="utf-8") as f:
+    DATASET = json.load(f)
 
 # --------------------------------------------------
-# 🤖 Assistant Logic
+# 🤖 Assistant Logic (Dataset Based)
 # --------------------------------------------------
 class DazzyAssistant:
     def handle_command(self, text: str) -> str:
@@ -20,58 +19,20 @@ class DazzyAssistant:
         if not cmd:
             return "Say something. Silence doesn’t compute."
 
-        if any(greet in cmd for greet in ("hello", "hi", "hey")):
-            return "Hello. Dazzy online. Speak."
+        # Direct dataset lookup
+        if cmd in DATASET:
+            value = DATASET[cmd]
 
-        if "time" in cmd:
-            return datetime.now().strftime("Time: %I:%M %p")
+            if value == "TIME_COMMAND":
+                return datetime.now().strftime("Time: %I:%M %p")
 
-        if "date" in cmd:
-            return datetime.now().strftime("Date: %A, %B %d, %Y")
+            if value == "DATE_COMMAND":
+                return datetime.now().strftime("Date: %A, %B %d, %Y")
 
-        if "open youtube" in cmd:
-            return (
-                "<a href='https://youtube.com' target='_blank' "
-                "style='color:#ff4d4d'>Open YouTube</a>"
-            )
+            return value
 
-        if cmd.startswith(("who is", "what is")):
-            topic = cmd.replace("who is", "").replace("what is", "").strip()
-            if not topic:
-                return "Ask properly. Topic missing."
-
-            try:
-                return wikipedia.summary(topic, sentences=2, auto_suggest=False)
-            except wikipedia.exceptions.DisambiguationError:
-                return "That topic is ambiguous. Be specific."
-            except wikipedia.exceptions.PageError:
-                return "No Wikipedia page found."
-            except Exception:
-                return "Wikipedia lookup failed."
-
-        return self.ask_deepseek(text)
-
-    def ask_deepseek(self, prompt: str) -> str:
-        if not DEEPSEEK_API_KEY:
-            return "Offline mode. DeepSeek API key not configured."
-
-        url = "https://api.deepseek.com/v1/chat/completions"
-        headers = {
-            "Authorization": f"Bearer {DEEPSEEK_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        payload = {
-            "model": "deepseek-chat",
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": 0.7,
-        }
-
-        try:
-            r = requests.post(url, headers=headers, json=payload, timeout=15)
-            r.raise_for_status()
-            return r.json()["choices"][0]["message"]["content"]
-        except Exception:
-            return "DeepSeek connection failed."
+        # Fallback
+        return "I don’t have this in my knowledge base yet."
 
 # --------------------------------------------------
 # 🌐 Flask App
@@ -131,7 +92,7 @@ HTML_TEMPLATE = """
 <body>
 
 <div id="chat">
-    <div class="bot">Dazzy online. Awaiting command.</div>
+    <div class="bot">Dazzy online. Knowledge base loaded.</div>
 </div>
 
 <div id="input">
