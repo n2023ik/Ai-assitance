@@ -45,6 +45,12 @@ class DazzyAssistant:
 
             if action == "OPEN_GMAIL":
                 return "<a href='https://mail.google.com' target='_blank'>Open Gmail</a>"
+                
+                if action == "geeksforgeeks":
+                return "<a href='https://www.geeksforgeeks.org/' target='_blank'>geeksforgeeks</a>"
+
+             if action == "instagram":
+                return "<a href='https://www.instagram.com/' target='_blank'>instagram</a>"
 
             return action
 
